@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Змейка с бонусами</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ===== Цветовая палитра «ночной сад» ===== */
+    --bg-deep:        #061309;
+    --bg-panel:       #0d2417;
+    --bg-panel-light: #123420;
+    --border-glow:    #1f6b3f;
+    --grid-line:      rgba(255,255,255,0.05);
+
+    --snake-head:     #9dffb0;
+    --snake-mid:      #46c56a;
+    --snake-tail:     #14532d;
+
+    --food-red:       #ef4444;
+    --food-dark:      #7f1d1d;
+
+    --star-gold:      #ffd166;
+    --star-dark:      #b8860b;
+
+    --drop-blue:      #38bdf8;
+    --drop-dark:      #0369a1;
+
+    --pepper-red:     #f97316;
+    --pepper-dark:    #b91c1c;
+
+    --text-cream:     #eafff0;
+    --text-dim:       #7fae8e;
+    --accent:         #ffd166;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: radial-gradient(ellipse at top, #0a2013 0%, var(--bg-deep) 70%);
+    color: var(--text-cream);
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+
+  /* Едва заметная фоновая "сканлайн"-текстура для ретро-атмосферы */
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background: repeating-linear-gradient(
+      0deg, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px,
+      transparent 1px, transparent 3px
+    );
+    pointer-events:none;
+    z-index:0;
+  }
+
+  .arcade{
+    position:relative;
+    z-index:1;
+    background: linear-gradient(160deg, var(--bg-panel) 0%, #081b0f 100%);
+    border-radius: 22px;
+    padding: 18px 20px 22px;
+    box-shadow:
+      0 0 0 2px var(--border-glow),
+      0 0 40px rgba(31,107,63,0.35),
+      0 25px 60px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    display:flex; flex-direction:column; align-items:center;
+    gap: 12px;
+    max-width: 96vw;
+  }
+
+  .title{
+    font-family:'Press Start 2P', monospace;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: var(--accent);
+    text-shadow: 0 0 12px rgba(255,209,102,0.55);
+    margin: 2px 0 4px;
+  }
+
+  /* ===== Верхняя панель со счётом и скоростью ===== */
+  .hud{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap: 10px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  .hud .metric{ display:flex; flex-direction:column; gap:2px; }
+  .hud .metric .label{ font-size:10px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; }
+  .hud .metric .value{ font-family:'Press Start 2P', monospace; font-size:14px; color:var(--text-cream); }
+  .hud .metric.score .value{ color: var(--accent); text-shadow:0 0 8px rgba(255,209,102,0.4); }
+  .hud .metric.speed .value.fast{ color: var(--pepper-red); text-shadow:0 0 8px rgba(249,115,22,0.5); }
+  .hud .metric.speed .value.slow{ color: var(--drop-blue); text-shadow:0 0 8px rgba(56,189,248,0.5); }
+
+  /* ===== Игровое поле ===== */
+  .field-wrap{
+    position:relative;
+    border-radius: 12px;
+    padding: 8px;
+    background: linear-gradient(160deg, #0a1f11, #051007);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), inset 0 4px 20px rgba(0,0,0,0.5);
+  }
+
+  canvas{
+    display:block;
+    border-radius: 6px;
+    background: var(--bg-deep);
+  }
+
+  /* ===== Легенда бонусов ===== */
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap: 8px 14px;
+    justify-content:center;
+    font-size: 11px;
+    color: var(--text-dim);
+    max-width: 460px;
+  }
+  .legend .item{ display:flex; align-items:center; gap:6px; }
+  .legend .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .legend .dot.food{ background: var(--food-red); }
+  .legend .dot.star{ background: var(--star-gold); box-shadow:0 0 6px var(--star-gold); }
+  .legend .dot.drop{ background: var(--drop-blue); box-shadow:0 0 6px var(--drop-blue); }
+  .legend .dot.pepper{ background: var(--pepper-red); box-shadow:0 0 6px var(--pepper-red); }
+
+  .hint{ font-size:10px; color: var(--text-dim); text-align:center; }
+
+  /* ===== Модальное окно Game Over ===== */
+  .modal-overlay{
+    position:fixed; inset:0;
+    background: rgba(3,10,5,0.78);
+    backdrop-filter: blur(4px);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 10;
+    opacity:0; pointer-events:none;
+    transition: opacity .25s ease;
+  }
+  .modal-overlay.visible{ opacity:1; pointer-events:auto; }
+
+  .modal-box{
+    background: linear-gradient(160deg, var(--bg-panel-light), #071c10);
+    border: 1px solid var(--border-glow);
+    box-shadow: 0 0 60px rgba(31,107,63,0.45), 0 20px 50px rgba(0,0,0,0.6);
+    border-radius: 18px;
+    padding: 32px 34px;
+    text-align:center;
+    max-width: 340px;
+    transform: scale(0.9) translateY(10px);
+    transition: transform .25s ease;
+  }
+  .modal-overlay.visible .modal-box{ transform: scale(1) translateY(0); }
+
+  .modal-box h2{
+    font-family:'Press Start 2P', monospace;
+    font-size: 16px;
+    color: var(--food-red);
+    text-shadow: 0 0 14px rgba(239,68,68,0.55);
+    margin: 0 0 18px;
+    letter-spacing: 1px;
+  }
+
+  .modal-box .final-label{ font-size:11px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; }
+  .modal-box .final-score{
+    font-family:'Press Start 2P', monospace;
+    font-size: 28px;
+    color: var(--accent);
+    text-shadow: 0 0 16px rgba(255,209,102,0.5);
+    margin: 6px 0 24px;
+  }
+
+  .btn-restart{
+    font-family:'Press Start 2P', monospace;
+    font-size: 11px;
+    color: #06170c;
+    background: linear-gradient(180deg, #9dffb0, #46c56a);
+    border: none;
+    border-radius: 10px;
+    padding: 14px 22px;
+    cursor:pointer;
+    box-shadow: 0 6px 0 #14532d, 0 10px 20px rgba(0,0,0,0.4);
+    transition: transform .08s ease, box-shadow .08s ease;
+    letter-spacing: 0.5px;
+  }
+  .btn-restart:hover{ filter:brightness(1.08); }
+  .btn-restart:active{
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #14532d, 0 4px 10px rgba(0,0,0,0.4);
+  }
+
+  @media (max-width: 480px){
+    .title{ font-size: 11px; }
+    .hud{ font-size: 11px; padding: 8px 10px; }
+    .hud .metric .value{ font-size:12px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="arcade">
+    <div class="title">🐍 ЗМЕЙКА С БОНУСАМИ</div>
+
+    <!-- Верхняя панель: счёт и текущая скорость -->
+    <div class="hud">
+      <div class="metric score">
+        <span class="label">Счёт</span>
+        <span class="value" id="scoreValue">0</span>
+      </div>
+      <div class="metric speed">
+        <span class="label">Скорость</span>
+        <span class="value" id="speedValue">1.0x</span>
+      </div>
+    </div>
+
+    <div class="field-wrap">
+      <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div class="legend">
+      <span class="item"><span class="dot food"></span>Яблоко +10</span>
+      <span class="item"><span class="dot star"></span>Звезда +50</span>
+      <span class="item"><span class="dot drop"></span>Капля — замедление</span>
+      <span class="item"><span class="dot pepper"></span>Перец — ускорение</span>
+    </div>
+    <div class="hint">Управление: стрелки ↑ ↓ ← →</div>
+  </div>
+
+  <!-- Окно завершения игры -->
+  <div class="modal-overlay" id="gameOverOverlay">
+    <div class="modal-box">
+      <h2>ИГРА ОКОНЧЕНА</h2>
+      <div class="final-label">Ваш результат</div>
+      <div class="final-score" id="finalScoreValue">0</div>
+      <button class="btn-restart" id="restartBtn">▶ ИГРАТЬ СНОВА</button>
+    </div>
+  </div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ==============================================================
+     НАСТРОЙКИ И КОНСТАНТЫ
+  ============================================================== */
+  const GRID_SIZE = 20;              // сетка 20x20 клеток
+  const BASE_INTERVAL = 150;         // базовый интервал хода змейки (мс)
+  const MIN_INTERVAL = 70;           // минимальный интервал (максимальная скорость от роста очков)
+
+  const STAR_SPAWN_EVERY   = 10000;  // золотая звезда — раз в 10 секунд
+  const STAR_LIFETIME      = 5000;   // исчезает через 5 секунд, если не съедена
+  const DROP_SPAWN_EVERY   = 15000;  // синяя капля — раз в 15 секунд
+  const DROP_LIFETIME      = 6000;   // время жизни капли на поле
+  const PEPPER_SPAWN_EVERY = 20000;  // красный перец — раз в 20 секунд
+  const PEPPER_LIFETIME    = 6000;   // время жизни перца на поле
+
+  const DROP_EFFECT_DURATION   = 3000; // замедление действует 3 секунды
+  const PEPPER_EFFECT_DURATION = 3000; // ускорение действует 3 секунды
+
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  /* ==============================================================
+     СОСТОЯНИЕ ИГРЫ
+  ============================================================== */
+  let cellSize = 24;                 // размер одной клетки в пикселях (пересчитывается адаптивно)
+  let dpr = window.devicePixelRatio || 1;
+
+  let snake, direction, nextDirection, food, score, gameRunning;
+  let bonuses = { star: null, drop: null, pepper: null }; // активные бонусы на поле
+  let bonusTimers = { star: null, drop: null, pepper: null }; // таймеры исчезновения бонусов
+  let spawnIntervals = [];           // интервалы появления бонусов (для очистки при рестарте)
+
+  let activeEffect = null;           // 'slow' | 'fast' | null — активный эффект скорости
+  let effectTimeout = null;
+
+  let tickTimeout = null;            // таймер игрового такта (логика)
+  let rafId = null;                  // requestAnimationFrame (рендер)
+
+  /* ==============================================================
+     АДАПТИВНЫЙ РАЗМЕР ПОЛЯ
+  ============================================================== */
+  function resizeCanvas() {
+    const available = Math.min(
+      window.innerWidth - 60,
+      window.innerHeight - 240,
+      560
+    );
+    cellSize = Math.max(12, Math.floor(available / GRID_SIZE));
+    const size = cellSize * GRID_SIZE;
+
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  /* ==============================================================
+     УТИЛИТЫ
+  ============================================================== */
+  const rnd = (n) => Math.floor(Math.random() * n);
+
+  // Проверяет, свободна ли клетка (не занята змейкой, едой или другим бонусом)
+  function isCellFree(x, y) {
+    if (snake.some(s => s.x === x && s.y === y)) return false;
+    if (food && food.x === x && food.y === y) return false;
+    for (const key in bonuses) {
+      const b = bonuses[key];
+      if (b && b.x === x && b.y === y) return false;
+    }
+    return true;
+  }
+
+  function randomFreeCell() {
+    let x, y, attempts = 0;
+    do {
+      x = rnd(GRID_SIZE);
+      y = rnd(GRID_SIZE);
+      attempts++;
+    } while (!isCellFree(x, y) && attempts < 500);
+    return { x, y };
+  }
+
+  // Линейная интерполяция цвета между двумя RGB-значениями
+  function lerpColor(c1, c2, t) {
+    const r = Math.round(c1[0] + (c2[0] - c1[0]) * t);
+    const g = Math.round(c1[1] + (c2[1] - c1[1]) * t);
+    const b = Math.round(c1[2] + (c2[2] - c1[2]) * t);
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  /* ==============================================================
+     ИНИЦИАЛИЗАЦИЯ / СТАРТ ИГРЫ
+  ============================================================== */
+  function initGame() {
+    resizeCanvas();
+
+    // Змейка стартует в центре поля, двигаясь вправо
+    const cx = Math.floor(GRID_SIZE / 2);
+    const cy = Math.floor(GRID_SIZE / 2);
+    snake = [
+      { x: cx - 1, y: cy },
+      { x: cx - 2, y: cy },
+      { x: cx - 3, y: cy }
+    ];
+    direction = { x: 1, y: 0 };
+    nextDirection = { x: 1, y: 0 };
+
+    score = 0;
+    updateScoreDisplay();
+
+    bonuses = { star: null, drop: null, pepper: null };
+    clearBonusTimers();
+    activeEffect = null;
+    clearTimeout(effectTimeout);
+    updateSpeedDisplay();
+
+    food = randomFreeCell();
+
+    gameRunning = true;
+    document.getElementById('gameOverOverlay').classList.remove('visible');
+
+    clearSpawnIntervals();
+    setupBonusSpawners();
+
+    clearTimeout(tickTimeout);
+    scheduleTick();
+
+    cancelAnimationFrame(rafId);
+    renderLoop();
+  }
+
+  /* ==============================================================
+     ТАЙМЕРЫ ПОЯВЛЕНИЯ БОНУСОВ
+  ============================================================== */
+  function setupBonusSpawners() {
+    spawnIntervals.push(setInterval(() => spawnBonus('star'), STAR_SPAWN_EVERY));
+    spawnIntervals.push(setInterval(() => spawnBonus('drop'), DROP_SPAWN_EVERY));
+    spawnIntervals.push(setInterval(() => spawnBonus('pepper'), PEPPER_SPAWN_EVERY));
+  }
+
+  function clearSpawnIntervals() {
+    spawnIntervals.forEach(clearInterval);
+    spawnIntervals = [];
+  }
+
+  function clearBonusTimers() {
+    for (const key in bonusTimers) {
+      if (bonusTimers[key]) clearTimeout(bonusTimers[key]);
+      bonusTimers[key] = null;
+    }
+  }
+
+  const BONUS_LIFETIME = { star: STAR_LIFETIME, drop: DROP_LIFETIME, pepper: PEPPER_LIFETIME };
+
+  function spawnBonus(type) {
+    if (!gameRunning) return;
+    if (bonuses[type]) return; // предыдущий экземпляр ещё на поле — не спавним поверх
+
+    const cell = randomFreeCell();
+    bonuses[type] = cell;
+
+    // Бонус исчезает сам по себе, если его не съели вовремя
+    bonusTimers[type] = setTimeout(() => {
+      bonuses[type] = null;
+    }, BONUS_LIFETIME[type]);
+  }
+
+  function consumeBonus(type) {
+    bonuses[type] = null;
+    if (bonusTimers[type]) {
+      clearTimeout(bonusTimers[type]);
+      bonusTimers[type] = null;
+    }
+
+    if (type === 'star') {
+      score += 50;
+      updateScoreDisplay();
+    } else if (type === 'drop') {
+      activateEffect('slow', DROP_EFFECT_DURATION);
+    } else if (type === 'pepper') {
+      activateEffect('fast', PEPPER_EFFECT_DURATION);
+    }
+  }
+
+  /* ==============================================================
+     ЭФФЕКТЫ СКОРОСТИ
+  ============================================================== */
+  function activateEffect(type, duration) {
+    activeEffect = type;
+    clearTimeout(effectTimeout);
+    effectTimeout = setTimeout(() => {
+      activeEffect = null;
+      updateSpeedDisplay();
+    }, duration);
+    updateSpeedDisplay();
+  }
+
+  // Базовый интервал плавно уменьшается с ростом счёта — игра постепенно ускоряется
+  function getBaseInterval() {
+    const reduction = Math.floor(score / 50) * 6;
+    return Math.max(MIN_INTERVAL, BASE_INTERVAL - reduction);
+  }
+
+  function getCurrentInterval() {
+    const base = getBaseInterval();
+    if (activeEffect === 'fast') return Math.max(35, Math.round(base * 0.5));
+    if (activeEffect === 'slow') return Math.round(base * 1.8);
+    return base;
+  }
+
+  /* ==============================================================
+     ИГРОВОЙ ЦИКЛ (ЛОГИКА)
+  ============================================================== */
+  function scheduleTick() {
+    clearTimeout(tickTimeout);
+    tickTimeout = setTimeout(gameTick, getCurrentInterval());
+  }
+
+  function gameTick() {
+    if (!gameRunning) return;
+
+    direction = nextDirection;
+    const head = snake[0];
+    const newHead = { x: head.x + direction.x, y: head.y + direction.y };
+
+    // Столкновение со стеной
+    if (newHead.x < 0 || newHead.x >= GRID_SIZE || newHead.y < 0 || newHead.y >= GRID_SIZE) {
+      return endGame();
+    }
+
+    const willEatFood = food && newHead.x === food.x && newHead.y === food.y;
+
+    // Столкновение с собственным хвостом.
+    // Если змейка не растёт в этот ход, последний сегмент "освобождается" — его можно занять.
+    const bodyToCheck = willEatFood ? snake : snake.slice(0, -1);
+    if (bodyToCheck.some(s => s.x === newHead.x && s.y === newHead.y)) {
+      return endGame();
+    }
+
+    snake.unshift(newHead);
+
+    if (willEatFood) {
+      score += 10;
+      updateScoreDisplay();
+      food = randomFreeCell();
+    } else {
+      snake.pop();
+    }
+
+    // Проверяем, не съеден ли какой-то бонус
+    for (const type of ['star', 'drop', 'pepper']) {
+      const b = bonuses[type];
+      if (b && b.x === newHead.x && b.y === newHead.y) {
+        consumeBonus(type);
+      }
+    }
+
+    updateSpeedDisplay();
+    scheduleTick();
+  }
+
+  function endGame() {
+    gameRunning = false;
+    clearTimeout(tickTimeout);
+    clearSpawnIntervals();
+    clearBonusTimers();
+    clearTimeout(effectTimeout);
+    cancelAnimationFrame(rafId);
+
+    document.getElementById('finalScoreValue').textContent = score;
+    document.getElementById('gameOverOverlay').classList.add('visible');
+  }
+
+  /* ==============================================================
+     УПРАВЛЕНИЕ
+  ============================================================== */
+  window.addEventListener('keydown', (e) => {
+    const key = e.key;
+    const goingUp    = direction.y === -1;
+    const goingDown  = direction.y === 1;
+    const goingLeft  = direction.x === -1;
+    const goingRight = direction.x === 1;
+
+    if (key === 'ArrowUp' && !goingDown)    { nextDirection = { x: 0, y: -1 }; e.preventDefault(); }
+    else if (key === 'ArrowDown' && !goingUp)    { nextDirection = { x: 0, y: 1 };  e.preventDefault(); }
+    else if (key === 'ArrowLeft' && !goingRight) { nextDirection = { x: -1, y: 0 }; e.preventDefault(); }
+    else if (key === 'ArrowRight' && !goingLeft) { nextDirection = { x: 1, y: 0 };  e.preventDefault(); }
+  });
+
+  document.getElementById('restartBtn').addEventListener('click', initGame);
+
+  /* ==============================================================
+     ОТОБРАЖЕНИЕ HUD
+  ============================================================== */
+  function updateScoreDisplay() {
+    document.getElementById('scoreValue').textContent = score;
+  }
+
+  function updateSpeedDisplay() {
+    const el = document.getElementById('speedValue');
+    const base = getBaseInterval();
+    const current = getCurrentInterval();
+    const multiplier = (base / current).toFixed(1);
+
+    el.classList.remove('fast', 'slow');
+    if (activeEffect === 'fast') {
+      el.textContent = multiplier + 'x ⚡';
+      el.classList.add('fast');
+    } else if (activeEffect === 'slow') {
+      el.textContent = multiplier + 'x 💧';
+      el.classList.add('slow');
+    } else {
+      el.textContent = multiplier + 'x';
+    }
+  }
+
+  /* ==============================================================
+     РЕНДЕРИНГ (отдельный цикл на requestAnimationFrame —
+     даёт плавную пульсацию бонусов независимо от скорости змейки)
+  ============================================================== */
+  function renderLoop() {
+    draw();
+    rafId = requestAnimationFrame(renderLoop);
+  }
+
+  function draw() {
+    const size = cellSize * GRID_SIZE;
+    ctx.clearRect(0, 0, size, size);
+
+    drawGrid(size);
+    drawFood();
+    drawBonuses();
+    drawSnake();
+  }
+
+  // Едва заметная сетка на игровом поле
+  function drawGrid(size) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i < GRID_SIZE; i++) {
+      const p = i * cellSize + 0.5;
+      ctx.moveTo(p, 0); ctx.lineTo(p, size);
+      ctx.moveTo(0, p); ctx.lineTo(size, p);
+    }
+    ctx.stroke();
+  }
+
+  // Змейка: градиент от яркой головы к тёмному хвосту, скруглённые сегменты
+  function drawSnake() {
+    const headRGB = [157, 255, 176];
+    const tailRGB = [20, 83, 45];
+    const pad = 2;
+
+    for (let i = snake.length - 1; i >= 0; i--) {
+      const seg = snake[i];
+      const t = snake.length > 1 ? i / (snake.length - 1) : 0;
+      const color = lerpColor(headRGB, tailRGB, t);
+
+      const x = seg.x * cellSize + pad;
+      const y = seg.y * cellSize + pad;
+      const w = cellSize - pad * 2;
+      const h = cellSize - pad * 2;
+
+      ctx.fillStyle = color;
+      if (i === 0) {
+        ctx.shadowColor = 'rgba(157,255,176,0.7)';
+        ctx.shadowBlur = 10;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+      roundRect(x, y, w, h, Math.max(3, cellSize * 0.28));
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Глаза на голове змейки, смотрят по направлению движения
+      if (i === 0) {
+        ctx.fillStyle = '#06170c';
+        const er = Math.max(1.5, cellSize * 0.09);
+        const cxp = seg.x * cellSize + cellSize / 2;
+        const cyp = seg.y * cellSize + cellSize / 2;
+        const dx = direction.x, dy = direction.y;
+
+        // Смещение вдоль направления движения (глаза ближе к "носу")
+        const forwardX = dx * cellSize * 0.2;
+        const forwardY = dy * cellSize * 0.2;
+        // Смещение поперёк направления движения (расставляем два глаза)
+        const sideX = (dy !== 0 ? cellSize * 0.18 : 0);
+        const sideY = (dx !== 0 ? cellSize * 0.18 : 0);
+
+        ctx.beginPath();
+        ctx.arc(cxp + forwardX + sideX, cyp + forwardY + sideY, er, 0, Math.PI * 2);
+        ctx.arc(cxp + forwardX - sideX, cyp + forwardY - sideY, er, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Еда — красное яблоко с листиком
+  function drawFood() {
+    if (!food) return;
+    const cx = food.x * cellSize + cellSize / 2;
+    const cy = food.y * cellSize + cellSize / 2;
+    const r = cellSize * 0.36;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(239,68,68,0.6)';
+    ctx.shadowBlur = 8;
+    const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.2, cx, cy, r);
+    grad.addColorStop(0, '#fca5a5');
+    grad.addColorStop(1, '#ef4444');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // листик
+    ctx.fillStyle = '#4ade80';
+    ctx.beginPath();
+    ctx.ellipse(cx + r * 0.35, cy - r * 0.95, r * 0.35, r * 0.18, -0.6, 0, Math.PI * 2);
+    ctx.fill();
+    // черенок
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = Math.max(1, cellSize * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.85);
+    ctx.lineTo(cx, cy - r * 1.15);
+    ctx.stroke();
+  }
+
+  function drawBonuses() {
+    const pulse = 0.75 + 0.25 * Math.sin(performance.now() / 180); // мягкая пульсация свечения
+
+    if (bonuses.star) drawStar(bonuses.star, pulse);
+    if (bonuses.drop) drawDrop(bonuses.drop, pulse);
+    if (bonuses.pepper) drawPepper(bonuses.pepper, pulse);
+  }
+
+  // Золотая звезда
+  function drawStar(pos, pulse) {
+    const cx = pos.x * cellSize + cellSize / 2;
+    const cy = pos.y * cellSize + cellSize / 2;
+    const outerR = cellSize * 0.42;
+    const innerR = outerR * 0.45;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,209,102,0.9)';
+    ctx.shadowBlur = 14 * pulse;
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const ang = (Math.PI / 5) * i - Math.PI / 2;
+      const r = i % 2 === 0 ? outerR : innerR;
+      const px = cx + Math.cos(ang) * r;
+      const py = cy + Math.sin(ang) * r;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Синяя капля (замедление)
+  function drawDrop(pos, pulse) {
+    const cx = pos.x * cellSize + cellSize / 2;
+    const cy = pos.y * cellSize + cellSize / 2;
+    const r = cellSize * 0.34;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(56,189,248,0.9)';
+    ctx.shadowBlur = 12 * pulse;
+    const grad = ctx.createLinearGradient(cx, cy - r * 1.4, cx, cy + r);
+    grad.addColorStop(0, '#7dd3fc');
+    grad.addColorStop(1, '#0369a1');
+    ctx.fillStyle = grad;
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 1.4);
+    ctx.quadraticCurveTo(cx + r, cy - r * 0.2, cx + r, cy + r * 0.35);
+    ctx.arc(cx, cy + r * 0.35, r, 0, Math.PI, false);
+    ctx.quadraticCurveTo(cx - r, cy - r * 0.2, cx, cy - r * 1.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Красный перец (ускорение)
+  function drawPepper(pos, pulse) {
+    const cx = pos.x * cellSize + cellSize / 2;
+    const cy = pos.y * cellSize + cellSize / 2;
+    const w = cellSize * 0.28;
+    const h = cellSize * 0.62;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(249,115,22,0.9)';
+    ctx.shadowBlur = 12 * pulse;
+    ctx.translate(cx, cy);
+    ctx.rotate(-0.35);
+
+    const grad = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+    grad.addColorStop(0, '#fb923c');
+    grad.addColorStop(1, '#b91c1c');
+    ctx.fillStyle = grad;
+
+    roundRect(-w / 2, -h / 2, w, h, w * 0.5);
+    ctx.fill();
+
+    // черенок перца
+    ctx.fillStyle = '#4ade80';
+    ctx.fillRect(-w * 0.18, -h / 2 - h * 0.16, w * 0.36, h * 0.18);
+    ctx.restore();
+  }
+
+  /* ==============================================================
+     ЗАПУСК
+  ============================================================== */
+  initGame();
+})();
+</script>
+</body>
+</html>
